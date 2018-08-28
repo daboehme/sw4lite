@@ -35,8 +35,19 @@
 using namespace std;
 #include "EW.h"
 
+#ifdef SW4_USE_CALIPER
+#include <caliper/cali.h>
+#endif
+
 int main( int argc, char** argv )
 {
+#ifdef SW4_USE_CALIPER
+   cali_config_preset("CALI_CALIPER_ATTRIBUTE_PROPERTIES", 
+                      "function=process_scope:nested,"
+                      "annotation=process_scope:nested");
+   CALI_CXX_MARK_FUNCTION;
+#endif
+
    //MPI_Init(&argc, &argv);
    int myRank;
    double  time_start, time_end;

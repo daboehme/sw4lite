@@ -129,6 +129,14 @@ else
   debug = no
 endif
 
+# DBO: override compiler settings - delete before merge 
+FC=mpif90
+CXX=mpicxx
+CALIPER_DIR=${HOME}/local/caliper/gcc6-release
+EXTRA_LINK_FLAGS=-L$(shell spack location --install-dir netlib-lapack)/lib64 -llapack -lblas -lgfortran
+openmp=yes
+debug=yes
+
 ifeq ($(debug),yes)
    optlevel = DEBUG
 else
@@ -189,6 +197,11 @@ ifeq ($(single),yes)
    CXXFLAGS += -I../src/float
 else
    CXXFLAGS += -I../src/double
+endif
+
+ifeq ($(caliper),yes)
+  CXXFLAGS  += -I$(CALIPER_DIR)/include -DSW4_USE_CALIPER 
+  EXTRA_LINK_FLAGS += -Wl,-rpath $(CALIPER_DIR)/lib64 -L$(CALIPER_DIR)/lib64 -lcaliper-mpi -lcaliper
 endif
 
 ifneq ($(origin computername),undefined)
