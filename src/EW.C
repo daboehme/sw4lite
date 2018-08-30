@@ -61,6 +61,10 @@
 #include "F77_FUNC.h"
 #include "EWCuda.h"
 
+#ifdef SW4_USE_CALIPER
+#include <caliper/cali.h>
+#endif
+
 #ifndef SW4_CROUTINES
 extern "C" {
    void F77_FUNC(rhs4th3fortsgstr,RHS4TH3FORTSGSTR)( int*, int*, int*, int*, int*, int*, int*, int*, 
@@ -2170,7 +2174,10 @@ void EW::printGridSizes() const
 //-----------------------------------------------------------------------
 bool EW::parseInputFile( const string& filename )
 {
-
+#ifdef SW4_USE_CALIPER
+   CALI_CXX_MARK_FUNCTION;
+#endif
+   
    char buffer[256];
    bool foundGrid = false;
    MPI_Barrier(MPI_COMM_WORLD);
@@ -2287,6 +2294,10 @@ bool EW::parseInputFile( const string& filename )
 //-----------------------------------------------------------------------
 void EW::setupRun()
 {
+#ifdef SW4_USE_CALIPER
+   CALI_CXX_MARK_FUNCTION;
+#endif
+   
 // Assign values to material data arrays mRho,mMu,mLambda
    setup_materials();
 // Check if any GPUs are available
@@ -2337,6 +2348,10 @@ void EW::setupRun()
 //-----------------------------------------------------------------------
 void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 {
+#ifdef SW4_USE_CALIPER
+   CALI_CXX_MARK_FUNCTION;
+#endif
+   
    // input: U,Um,mMu,mLambda,mRho,
 
    // local arrays: F, Up, Lu, Uacc
@@ -2523,9 +2538,18 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 // Set up the  array for data communication
    setup_device_communication_array();
 
+#ifdef SW4_USE_CALIPER
+   CALI_CXX_MARK_LOOP_BEGIN(timesteploop, "sw4.timesteploop");
+#endif
+
 // Begin time stepping loop
    for( int currentTimeStep = beginCycle; currentTimeStep <= mNumberOfTimeSteps; currentTimeStep++ )
-   {    
+   {
+#ifdef SW4_USE_CALIPER
+      CALI_CXX_MARK_LOOP_ITERATION(timesteploop, currentTimeStep);      
+      CALI_MARK_BEGIN("Force");
+#endif
+      
       time_measure[0] = MPI_Wtime();
       // Predictor 
       // Need U on device for evalRHS,
@@ -2552,7 +2576,11 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 #endif
       }
       time_measure[1] = MPI_Wtime();
-
+#ifdef SW4_USE_CALIPER
+      CALI_MARK_END("Force");
+      CALI_MARK_BEGIN("RHS");
+#endif
+      
 // evaluate right hand side
       if( m_cuobj->has_gpu() )
       {
@@ -2590,7 +2618,10 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
       //         }
 
       //m_cuobj->sync_stream(1);
-
+#ifdef SW4_USE_CALIPER
+      CALI_MARK_END("RHS");
+      CALI_MARK_BEGIN("BC.comm");
+#endif
       time_measure[2] = MPI_Wtime();
 
 // communicate across processor boundaries
@@ -2617,6 +2648,10 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
       }
 
       time_measure[3] = MPI_Wtime();
+#ifdef SW4_USE_CALIPER
+      CALI_MARK_END("BC.comm");
+      CALI_MARK_BEGIN("BC.phys");
+#endif
 
 // calculate boundary forcing at time t+mDt
       if( m_cuobj->has_gpu() )
@@ -2635,7 +2670,11 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 
       //      time_measure[3] = MPI_Wtime();
       time_measure[4] = MPI_Wtime();
-
+#ifdef SW4_USE_CALIPER
+      CALI_MARK_END("BC.phys");
+      CALI_MARK_BEGIN("Force");
+#endif
+      
       //      if( !(m_cuobj->has_gpu()) )
       //         for( int g=0; g < mNumberOfGrids ; g++ )
       //	    Up[g].copy_to_device(m_cuobj,true,0);
@@ -2655,7 +2694,10 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 
       //      time_measure[4] = MPI_Wtime();
       time_measure[5] = MPI_Wtime();
-
+#ifdef SW4_USE_CALIPER
+      CALI_MARK_END("Force");
+      CALI_MARK_BEGIN("RHS");
+#endif
       if( m_cuobj->has_gpu() )
 	 evalDpDmInTimeCU( Up, U, Um, Uacc, 0 ); // store result in Uacc
       else
@@ -2698,7 +2740,10 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 	 evalCorrector( Up, mRho, Lu, F );
       //      time_measure[5] = MPI_Wtime();
       time_measure[6] = MPI_Wtime();
-
+#ifdef SW4_USE_CALIPER
+      CALI_MARK_END("RHS");
+      CALI_MARK_BEGIN("Supergrid");
+#endif
 // add in super-grid damping terms
       if ( m_use_supergrid )
       {
@@ -2724,7 +2769,10 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 
       //      time_measure[6] = MPI_Wtime();
       time_measure[7] = MPI_Wtime();
-
+#ifdef SW4_USE_CALIPER
+      CALI_MARK_END("Supergrid");
+      CALI_MARK_BEGIN("BC.comm");
+#endif
 // also check out EW::update_all_boundaries 
 // communicate across processor boundaries
       if( m_cuobj->has_gpu() )
@@ -2743,7 +2791,10 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 	    communicate_array( Up[g], g );
 
       time_measure[8] = MPI_Wtime();
-
+#ifdef SW4_USE_CALIPER
+      CALI_MARK_END("BC.comm");
+      CALI_MARK_BEGIN("BC.phys");
+#endif
 // calculate boundary forcing at time t+mDt (do we really need to call this fcn again???)
       if( m_cuobj->has_gpu() )
       {
@@ -2764,7 +2815,10 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 
       //      time_measure[7] = MPI_Wtime();	  
       time_measure[9] = MPI_Wtime();	  
-
+#ifdef SW4_USE_CALIPER
+      CALI_MARK_END("BC.phys");
+      CALI_MARK_BEGIN("Print");
+#endif
 // periodically, print time stepping info to stdout
       printTime( currentTimeStep, t, currentTimeStep == mNumberOfTimeSteps ); 
 // Images have to be written before the solution arrays are cycled, because both Up and Um are needed
@@ -2842,7 +2896,11 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
       cycleSolutionArrays(Um, U, Up, dev_Um, dev_U, dev_Up );
 
       //      time_measure[8] = MPI_Wtime();	  
-      time_measure[10] = MPI_Wtime();	  
+      time_measure[10] = MPI_Wtime();
+#ifdef SW4_USE_CALIPER
+      CALI_MARK_END("Print");
+      CALI_MARK_BEGIN("ExactSolution");
+#endif
 // evaluate error for some test cases
 //      if (m_lamb_test || m_point_source_test || m_rayleigh_wave_test )
       if ( m_point_source_test && saveerror )
@@ -2856,7 +2914,10 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 	    cout << t << " " << errInf << " " << errL2 << " " << solInf << endl;
       }
       //      time_measure[9] = MPI_Wtime();	  	
-      time_measure[11] = MPI_Wtime();	  
+      time_measure[11] = MPI_Wtime();
+#ifdef SW4_USE_CALIPER
+      CALI_MARK_END("ExactSolution");
+#endif
 // // See if it is time to write a restart file
 // //      if (mRestartDumpInterval > 0 &&  currentTimeStep % mRestartDumpInterval == 0)
 // //        serialize(currentTimeStep, U, Um);  
@@ -2876,6 +2937,11 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 	    trdata[s+12*(currentTimeStep-beginCycle)]= time_measure[s];
 
    } // end time stepping loop
+   
+#ifdef SW4_USE_CALIPER
+   CALI_CXX_MARK_LOOP_END(timesteploop);
+#endif
+   
    double time_end_solve = MPI_Wtime();
    print_execution_time( time_start_solve, time_end_solve, "solver phase" );
    if( m_output_detailed_timing )

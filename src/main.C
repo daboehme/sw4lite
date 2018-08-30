@@ -44,8 +44,9 @@ int main( int argc, char** argv )
 #ifdef SW4_USE_CALIPER
    cali_config_preset("CALI_CALIPER_ATTRIBUTE_PROPERTIES", 
                       "function=process_scope:nested,"
+                      "loop=process_scope:nested,"
+                      "mpi.function=process_scope:nested,"
                       "annotation=process_scope:nested");
-   CALI_CXX_MARK_FUNCTION;
 #endif
 
    //MPI_Init(&argc, &argv);
@@ -53,6 +54,10 @@ int main( int argc, char** argv )
    double  time_start, time_end;
    MPI_Init(&argc, &argv);
    MPI_Comm_rank(MPI_COMM_WORLD, &myRank);
+
+#ifdef SW4_USE_CALIPER
+   CALI_CXX_MARK_FUNCTION;
+#endif
 
    MPI_Barrier(MPI_COMM_WORLD);
    time_start = MPI_Wtime();
